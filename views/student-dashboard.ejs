@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student Dashboard</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: #f5f3ff;
+      padding: 30px;
+      margin: 0;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      color: #5e2b97;
+      margin-bottom: 40px;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 30px;
+      max-width: 1100px;
+      margin: auto;
+    }
+    .card {
+      background: white;
+      padding: 25px;
+      border-radius: 16px;
+      box-shadow: 0 0 15px rgba(150, 115, 255, 0.2);
+    }
+    h2 {
+      margin-top: 0;
+      color: #4a148c;
+    }
+    .info p {
+      margin: 0.5rem 0;
+    }
+    .alert {
+      color: red;
+      font-weight: bold;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      margin-top: 10px;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    input[type="text"],
+    input[type="number"],
+    input[type="file"],
+    input[type="date"],
+    textarea {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    textarea {
+      resize: vertical;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px;
+      background-color: #a56cff;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .logout-btn {
+      background-color: #6a1b9a;
+      margin-top: 30px;
+    }
+    .submitted-od {
+      margin-top: 15px;
+      background-color: #f3f0ff;
+      border-radius: 10px;
+      padding: 15px;
+    }
+    .status-approved { color: green; font-weight: bold; }
+    .status-rejected { color: red; font-weight: bold; }
+    .status-pending { color: orange; font-weight: bold; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 25px;
+      background: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background-color: #ede7f6;
+      color: #4a148c;
+    }
+    .center {
+      text-align: center;
+    }
+    .delete-btn {
+      color: white;
+      background-color: #e74c3c;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎓 Welcome, <%= studentusers.name %></h1>
+
+  <div class="dashboard">
+    <!-- Student Info Card -->
+    <div class="card">
+      <h2>📘 Student Info</h2>
+      <p><strong>Name:</strong> <%= studentusers.name %></p>
+      <p><strong>Roll No:</strong> <%= studentusers.studentId %></p>
+      <p><strong>Department:</strong> <%= studentusers.department %></p>
+      <p><strong>Attendance %:</strong>
+        <span class="<%= studentusers.attendance < 75 ? 'alert' : '' %>">
+          <%= studentusers.attendance %>%
+        </span>
+      </p>
+    </div>
+
+    <!-- OD Submission Card -->
+    <div class="card">
+      <h2>📝 Submit OD Form</h2>
+      <form id="odForm" enctype="multipart/form-data">
+        <label>Reason</label>
+        <textarea name="reason" required></textarea>
+
+        <label>Date</label>
+        <input type="date" name="date" required>
+
+        <label>No. of Days on Duty</label>
+        <input type="number" name="days" min="1" required>
+
+        <label>Upload Proof (PDF/Image)</label>
+        <input type="file" name="proof" required accept=".pdf,image/*">
+
+        <input type="hidden" name="studentId" value="<%= studentusers.studentId %>">
+
+        <button type="submit">Submit OD</button>
+      </form>
+      <div id="message"></div>
+    </div>
+  </div>
+
+  <% if (odRequests && odRequests.length > 0) { %>
+    <h2 class="center">📄 Submitted OD Requests</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Reason</th>
+          <th>Days</th>
+          <th>Status</th>
+          <th>Proof</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% odRequests.forEach(od => { 
+            const dateObj = new Date(od.date);
+            const dateStr = dateObj.toLocaleDateString();
+            const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        %>
+          <tr id="od-row-<%= od._id %>">
+            <td><%= dateStr %></td>
+            <td><%= timeStr %></td>
+            <td><%= od.reason %></td>
+            <td><%= od.days || 1 %></td>
+            <td class="<%= od.status === 'Approved' ? 'status-approved' : od.status === 'Rejected' ? 'status-rejected' : 'status-pending' %>">
+              <%= od.status %>
+            </td>
+            <td>
+              <% if (od.filePath) { %>
+                <a href="<%= od.filePath %>" target="_blank">View Proof</a>
+              <% } else { %>
+                No file
+              <% } %>
+            </td>
+            <td>
+              <% if (od.status === 'Pending') { %>
+                <button class="delete-btn" onclick="deleteODRequest(event, '<%= od._id %>')">Delete</button>
+              <% } else { %>
+                -
+              <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } else { %>
+    <p class="center">No OD forms submitted yet.</p>
+  <% } %>
+
+  <form action="/logout" method="GET" class="center">
+    <button type="submit" class="logout-btn">Log Out</button>
+  </form>
+
+  <script>
+    // Handle OD Form Submission via AJAX
+    document.getElementById("odForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch("/submit-od", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.text();
+        document.getElementById("message").innerHTML = `<p style="color:green; font-weight:bold;">✅ ${result}</p>`;
+        form.reset();
+        setTimeout(() => window.location.reload(), 1500);
+
+      } catch (error) {
+        console.error("OD submit error:", error);
+        document.getElementById("message").innerHTML = `<p style="color:red;">❌ Failed to submit OD.</p>`;
+      }
+    });
+
+    // Handle Deletion via AJAX
+    async function deleteODRequest(event, requestId) {
+      event.preventDefault();
+      const confirmed = confirm("Are you sure you want to delete this OD request?");
+      if (!confirmed) return;
+
+      try {
+        const response = await fetch(`/delete-od/${requestId}`, {
+          method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert(result.message);
+          const row = document.getElementById(`od-row-${requestId}`);
+          if (row) row.remove();
+        } else {
+          alert("Failed to delete OD request.");
+        }
+
+      } catch (error) {
+        console.error("Error deleting:", error);
+        alert("An error occurred while deleting.");
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Faculty Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .card {
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .btn {
+      padding: 8px 12px;
+      background-color: #594ae2;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .btn:hover {
+      background-color: #3f37c9;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+    #attendanceChart {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Faculty Attendance Dashboard</h1>
+
+  <!-- Manual Attendance Entry -->
+  <div class="card">
+    <h2>Manual Attendance Entry (Live Monitoring)</h2>
+    <form id="manualAttendanceForm">
+      <input type="text" id="manualName" placeholder="Name" required />
+      <input type="text" id="manualRoll" placeholder="Roll Number" required />
+      <input type="email" id="manualEmail" placeholder="Email" required />
+      <input type="number" id="manualPercentage" placeholder="Attendance %" required min="0" max="100" />
+      <button type="submit" class="btn">Submit Attendance</button>
+    </form>
+  </div>
+
+  <!-- Filter & Export -->
+  <div class="card">
+    <h2>Filter Attendance Records</h2>
+    <label for="filterSelect">Filter By Attendance:</label>
+    <select id="filterSelect">
+      <option value="all">All</option>
+      <option value="good">Good (85%+)</option>
+      <option value="improve">Needs Improvement (75-85%)</option>
+      <option value="low">Low (&lt;75%)</option>
+    </select>
+    <button class="btn" id="exportBtn">Export to Excel</button>
+  </div>
+
+  <!-- Monitoring Table -->
+  <div class="card">
+    <h2>Live Monitoring Table</h2>
+    <table id="monitorTable">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Roll Number</th>
+          <th>Email</th>
+          <th>Attendance %</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Attendance Chart -->
+  <div class="card">
+    <h2>Attendance Chart</h2>
+    <canvas id="attendanceChart" width="600" height="300"></canvas>
+  </div>
+
+  <!-- Manual Attendance to DB -->
+  <div class="card">
+    <h3>Manual Attendance Entry (Saved to DB)</h3>
+    <form action="/manual-attendance" method="POST">
+      <input type="text" name="name" placeholder="Name" required />
+      <input type="text" name="roll" placeholder="Roll No" required />
+      <input type="email" name="email" placeholder="Email" required />
+      <input type="text" name="department" placeholder="Department" required />
+      <input type="date" name="date" required />
+      <input type="number" name="percentage" placeholder="Attendance (%)" required min="0" max="100" />
+      <button type="submit" class="btn">Submit</button>
+    </form>
+  </div>
+
+  <!-- Filter Attendance (Backend) -->
+  <div class="card">
+    <h3>Filter Attendance (From DB)</h3>
+    <form method="GET" action="/filter-attendance">
+      <input type="text" name="department" placeholder="Department (optional)" />
+      <input type="date" name="date" />
+      <button type="submit" class="btn">Filter</button>
+    </form>
+  </div>
+
+  <!-- Display DB Attendance Records -->
+  <div class="card">
+    <h2>📊 Filtered Attendance Records (From DB)</h2>
+    <table border="1">
+      <tr>
+        <th>Name</th>
+        <th>Roll</th>
+        <th>Email</th>
+        <th>Department</th>
+        <th>Date</th>
+        <th>Percentage</th>
+      </tr>
+      <% if(records && records.length > 0){ %>
+        <% records.forEach(r => { %>
+          <tr>
+            <td><%= r.name %></td>
+            <td><%= r.roll %></td>
+            <td><%= r.email %></td>
+            <td><%= r.department %></td>
+            <td><%= r.date %></td>
+            <td><%= r.percentage %></td>
+          </tr>
+        <% }) %>
+      <% } else { %>
+        <tr><td colspan="6" style="text-align:center;">No records found.</td></tr>
+      <% } %>
+    </table>
+  </div>
+
+  <!-- JS Script -->
+  <script>
+    let studentsGlobal = [];
+    let filteredStudents = [];
+    let chartInstance;
+
+    const manualAttendanceForm = document.getElementById("manualAttendanceForm");
+    const filterSelect = document.getElementById("filterSelect");
+    const exportBtn = document.getElementById("exportBtn");
+
+    manualAttendanceForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const name = document.getElementById("manualName").value.trim();
+      const roll = document.getElementById("manualRoll").value.trim();
+      const email = document.getElementById("manualEmail").value.trim();
+      const percentage = parseInt(document.getElementById("manualPercentage").value);
+
+      if (!name || !roll || !email || isNaN(percentage) || percentage < 0 || percentage > 100) {
+        alert("Please fill all fields correctly.");
+        return;
+      }
+
+      const student = {
+        Name: name,
+        "Roll Number": roll,
+        Email: email,
+        "Attendance %": percentage
+      };
+
+      studentsGlobal.push(student);
+      applyFilterAndRender();
+      this.reset();
+    });
+
+    filterSelect.addEventListener("change", applyFilterAndRender);
+
+    exportBtn.addEventListener("click", function() {
+      if(filteredStudents.length === 0){
+        alert("No data to export.");
+        return;
+      }
+      exportToExcel(filteredStudents);
+    });
+
+    function applyFilterAndRender() {
+      const filterValue = filterSelect.value;
+      if (filterValue === "good") {
+        filteredStudents = studentsGlobal.filter(s => s["Attendance %"] >= 85);
+      } else if (filterValue === "improve") {
+        filteredStudents = studentsGlobal.filter(s => s["Attendance %"] >= 75 && s["Attendance %"] < 85);
+      } else if (filterValue === "low") {
+        filteredStudents = studentsGlobal.filter(s => s["Attendance %"] < 75);
+      } else {
+        filteredStudents = [...studentsGlobal];
+      }
+      populateMonitoringTable(filteredStudents);
+    }
+
+    function populateMonitoringTable(students) {
+      const tbody = document.querySelector("#monitorTable tbody");
+      tbody.innerHTML = "";
+
+      if (students.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No records found.</td></tr>`;
+        if(chartInstance){
+          chartInstance.destroy();
+        }
+        return;
+      }
+
+      students.forEach(student => {
+        const percentage = parseInt(student["Attendance %"]);
+        let status = "";
+        if (percentage < 75) {
+          status = "<span style='color:red;font-weight:bold;'>Low Attendance</span>";
+        } else if (percentage < 85) {
+          status = "<span style='color:orange;font-weight:bold;'>Needs Improvement</span>";
+        } else {
+          status = "<span style='color:green;font-weight:bold;'>Good</span>";
+        }
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${student.Name || "N/A"}</td>
+          <td>${student["Roll Number"] || "N/A"}</td>
+          <td>${student.Email || "N/A"}</td>
+          <td>${student["Attendance %"] || "0"}</td>
+          <td>${status}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      generateAttendanceChart(students);
+    }
+
+    function generateAttendanceChart(students) {
+      const ctx = document.getElementById("attendanceChart").getContext("2d");
+      const labels = students.map(s => s.Name || "N/A");
+      const percentages = students.map(s => parseInt(s["Attendance %"]) || 0);
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Attendance %",
+            data: percentages,
+            backgroundColor: percentages.map(p => p >= 75 ? "rgba(100, 150, 255, 0.6)" : "rgba(255, 99, 132, 0.6)"),
+            borderColor: percentages.map(p => p >= 75 ? "rgba(100, 150, 255, 1)" : "rgba(255, 99, 132, 1)"),
+            borderWidth: 1
+          }]
+        },
+        options: {
+          plugins: {
+            title: {
+              display: true,
+              text: "Student Attendance Overview",
+              font: { size: 18 }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              ticks: {
+                callback: function (value) {
+                  return value + "%";
+                }
+              },
+              title: {
+                display: true,
+                text: "Attendance %"
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function exportToExcel(data) {
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attendance");
+      XLSX.writeFile(wb, "Filtered_Attendance.xlsx");
+    }
+
+    // Initial render
+    applyFilterAndRender();
+  </script>
+
+</body>
+</html>
